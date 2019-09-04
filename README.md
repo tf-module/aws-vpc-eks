@@ -1,17 +1,16 @@
 # eks-vpc-terraform
 
-Terraform example to deploy EKS in private VPC with autos-calling group.
+Terraform example to deploy EKS in AWS and provide an example to deploy a service with route53 DNS.
 
 ### Install
 
 ```bash
-$ terraform init
-$ terraform apply
+./bin/create_cluster.sh
+./bin/provision_eks.sh
 ```
 
 ### Destroy
 
 ```bash
-$ terraform init
-$ terraform destroy
+./bin/delete_all.sh
 ```
