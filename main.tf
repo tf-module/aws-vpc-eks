@@ -1,113 +1,45 @@
 terraform {
-  backend "s3" {
-    bucket = "eks-vpc-terraform"
-    key    = "terraform/platform/dev/state"
-    region = "us-west-2"
-  }
-}
-
-terraform {
   required_version = ">= 0.12.0"
 }
 
 provider "aws" {
   version = ">= 2.11"
-  region  = var.region
-}
-
-provider "random" {
-  version = "~> 2.1"
-}
-
-provider "local" {
-  version = "~> 1.2"
-}
-
-provider "null" {
-  version = "~> 2.1"
-}
-
-provider "template" {
-  version = "~> 2.1"
+  region  = local.aws_region
 }
 
 data "aws_availability_zones" "available" {
 }
 
-locals {
-  cluster_name = "test-eks-${random_string.suffix.result}"
+data "template_file" "private_subnet_cidrs" {
+  template = cidrsubnet(local.vpc_cidr, 8, 2 * count.index)
+  count    = local.az_count
 }
 
-resource "random_string" "suffix" {
-  length  = 8
-  special = false
-}
-
-resource "aws_security_group" "worker_group_mgmt_one" {
-  name_prefix = "worker_group_mgmt_one"
-  vpc_id      = module.vpc.vpc_id
-
-  ingress {
-    from_port = 22
-    to_port   = 22
-    protocol  = "tcp"
-
-    cidr_blocks = [
-      "10.0.0.0/8",
-    ]
-  }
-}
-
-resource "aws_security_group" "worker_group_mgmt_two" {
-  name_prefix = "worker_group_mgmt_two"
-  vpc_id      = module.vpc.vpc_id
-
-  ingress {
-    from_port = 22
-    to_port   = 22
-    protocol  = "tcp"
-
-    cidr_blocks = [
-      "192.168.0.0/16",
-    ]
-  }
-}
-
-resource "aws_security_group" "all_worker_mgmt" {
-  name_prefix = "all_worker_management"
-  vpc_id      = module.vpc.vpc_id
-
-  ingress {
-    from_port = 22
-    to_port   = 22
-    protocol  = "tcp"
-
-    cidr_blocks = [
-      "10.0.0.0/8",
-      "172.16.0.0/12",
-      "192.168.0.0/16",
-    ]
-  }
+data "template_file" "public_subnet_cidrs" {
+  template = cidrsubnet(local.vpc_cidr, 8, 2 * count.index + 1)
+  count    = local.az_count
 }
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "2.6.0"
 
-  name               = "dev-vpc"
-  cidr               = "10.0.0.0/16"
+  name               = "${local.cluster_name}-${terraform.workspace}-vpc"
+  cidr               = local.vpc_cidr
   azs                = data.aws_availability_zones.available.names
-  private_subnets    = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  public_subnets     = ["10.0.4.0/24", "10.0.5.0/24", "10.0.6.0/24"]
+  private_subnets    = data.template_file.private_subnet_cidrs.*.rendered
+  public_subnets     = data.template_file.public_subnet_cidrs.*.rendered
   enable_nat_gateway = true
   single_nat_gateway = true
 
   tags = {
-    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
+    "kubernetes.io/cluster/${local.cluster_name}" = "shared",
+    Environment                                   = terraform.workspace
   }
 
   public_subnet_tags = {
     "kubernetes.io/cluster/${local.cluster_name}" = "shared"
+    "kubernetes.io/role/elb"                      = 1
   }
 
   private_subnet_tags = {
@@ -118,30 +50,20 @@ module "vpc" {
 
 module "eks" {
   source       = "terraform-aws-modules/eks/aws"
-  version      = "5.0.0"
   cluster_name = local.cluster_name
+  vpc_id       = module.vpc.vpc_id
   subnets      = module.vpc.private_subnets
-
   tags = {
-    Environment = "dev"
+    Environment = terraform.workspace
   }
-
-  vpc_id = module.vpc.vpc_id
 
   worker_groups = [
     {
       name                          = "worker-group-1"
       instance_type                 = "t2.small"
       asg_desired_capacity          = 2
-      additional_security_group_ids = [aws_security_group.worker_group_mgmt_one.id]
-    },
-    {
-      name                          = "worker-group-2"
-      instance_type                 = "t2.medium"
-      additional_security_group_ids = [aws_security_group.worker_group_mgmt_two.id]
-      asg_desired_capacity          = 1
-    },
+    }
   ]
-
-  worker_additional_security_group_ids = [aws_security_group.all_worker_mgmt.id]
+  cluster_security_group_id            = aws_security_group.all_worker_mgmt.id
+  worker_additional_security_group_ids = [aws_security_group.worker_group_mgmt_one.id]
 }
