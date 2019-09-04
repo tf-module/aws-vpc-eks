@@ -1,4 +1,4 @@
-# eks-vpc-terraform
+# aws-vpc-eks
 
 Terraform example to deploy EKS in AWS and provide an example to deploy a service with route53 DNS.
 
