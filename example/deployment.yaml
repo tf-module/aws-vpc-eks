@@ -22,10 +22,10 @@ metadata:
   name: magpie
 spec:
   ports:
-  - name: 80-8080
-    port: 80
-    protocol: TCP
-    targetPort: 80
+    - name: 80-8080
+      port: 80
+      protocol: TCP
+      targetPort: 80
   selector:
     app: magpie
   type: ClusterIP
@@ -50,7 +50,14 @@ spec:
         app: magpie
     spec:
       containers:
-      - image: bywang/magpie
-        name: magpie
-        ports:
-          - containerPort: 80
+        - image: xxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/magpie
+          name: magpie
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "128m"
+            limits:
+              memory: "128Mi"
+              cpu: "256m"
+          ports:
+            - containerPort: 80
